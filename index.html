@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Spotify ESP32</title>
+</head>
+
+<body>
+
+    <h1>ESP32 Spotify Display</h1>
+
+    <button onclick="login()">
+        Login with Spotify
+    </button>
+
+    <p id="status">Not logged in</p>
+
+    <script>
+        // Put your Spotify Client ID here
+        const CLIENT_ID = "044f9bd3716a4e3b8413a708aa32ba49";
+
+        // This must EXACTLY match the Redirect URI
+        // registered in Spotify Developer Dashboard
+        const REDIRECT_URI =
+            "https://231bhav.github.io/spotify-callback";
+
+        const SCOPES = "user-read-currently-playing";
+
+        function login() {
+
+            const codeVerifier = generateRandomString(64);
+
+            localStorage.setItem("code_verifier", codeVerifier);
+
+            generateCodeChallenge(codeVerifier).then(codeChallenge => {
+
+                const params = new URLSearchParams({
+                    client_id: CLIENT_ID,
+                    response_type: "code",
+                    redirect_uri: REDIRECT_URI,
+                    scope: SCOPES,
+                    code_challenge_method: "S256",
+                    code_challenge: codeChallenge
+                });
+
+                window.location =
+                    "https://accounts.spotify.com/authorize?" +
+                    params.toString();
+            });
+        }
+
+        function generateRandomString(length) {
+
+            const characters =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+            let result = "";
+
+            for (let i = 0; i < length; i++) {
+                result += characters.charAt(
+                    Math.floor(Math.random() * characters.length)
+                );
+            }
+
+            return result;
+        }
+
+        async function generateCodeChallenge(verifier) {
+
+            const data = new TextEncoder().encode(verifier);
+
+            const digest = await crypto.subtle.digest(
+                "SHA-256",
+                data
+            );
+
+            return base64urlencode(digest);
+        }
+
+        function base64urlencode(buffer) {
+
+            return btoa(
+                String.fromCharCode(...new Uint8Array(buffer))
+            )
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+            .replace(/=+$/, "");
+        }
+    </script>
+
+</body>
+</html>
