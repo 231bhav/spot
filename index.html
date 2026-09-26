@@ -3,89 +3,322 @@
 <head>
     <meta charset="UTF-8">
     <title>Spotify ESP32</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 60px;
+            background: #111;
+            color: white;
+        }
+
+        button {
+            padding: 12px 25px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        #song {
+            margin-top: 30px;
+            font-size: 24px;
+        }
+    </style>
 </head>
 
 <body>
 
     <h1>ESP32 Spotify Display</h1>
 
-    <button onclick="login()">
+    <button id="loginButton" onclick="login()">
         Login with Spotify
     </button>
 
-    <p id="status">Not logged in</p>
+    <div id="status">Not logged in</div>
 
-    <script>
-        // Put your Spotify Client ID here
-        const CLIENT_ID = "044f9bd3716a4e3b8413a708aa32ba49";
+    <div id="song"></div>
 
-        // This must EXACTLY match the Redirect URI
-        // registered in Spotify Developer Dashboard
-       const REDIRECT_URI = "https://231bhav.github.io/spot/";
+<script>
 
-        const SCOPES = "user-read-currently-playing";
+const CLIENT_ID = "044f9bd3716a4e3b8413a708aa32ba49";
 
-        function login() {
+const REDIRECT_URI = "https://231bhav.github.io/spot/";
 
-            const codeVerifier = generateRandomString(64);
+const SCOPES = "user-read-currently-playing";
 
-            localStorage.setItem("code_verifier", codeVerifier);
 
-            generateCodeChallenge(codeVerifier).then(codeChallenge => {
+// -----------------------------
+// LOGIN
+// -----------------------------
 
-                const params = new URLSearchParams({
-                    client_id: CLIENT_ID,
-                    response_type: "code",
-                    redirect_uri: REDIRECT_URI,
-                    scope: SCOPES,
-                    code_challenge_method: "S256",
-                    code_challenge: codeChallenge
-                });
+async function login() {
 
-                window.location =
-                    "https://accounts.spotify.com/authorize?" +
-                    params.toString();
-            });
-        }
+    const codeVerifier = generateRandomString(64);
 
-        function generateRandomString(length) {
+    localStorage.setItem("code_verifier", codeVerifier);
 
-            const characters =
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const codeChallenge =
+        await generateCodeChallenge(codeVerifier);
 
-            let result = "";
+    const params = new URLSearchParams({
 
-            for (let i = 0; i < length; i++) {
-                result += characters.charAt(
-                    Math.floor(Math.random() * characters.length)
-                );
-            }
+        client_id: CLIENT_ID,
 
-            return result;
-        }
+        response_type: "code",
 
-        async function generateCodeChallenge(verifier) {
+        redirect_uri: REDIRECT_URI,
 
-            const data = new TextEncoder().encode(verifier);
+        scope: SCOPES,
 
-            const digest = await crypto.subtle.digest(
-                "SHA-256",
-                data
-            );
+        code_challenge_method: "S256",
 
-            return base64urlencode(digest);
-        }
+        code_challenge: codeChallenge
+    });
 
-        function base64urlencode(buffer) {
+    window.location =
+        "https://accounts.spotify.com/authorize?" +
+        params.toString();
+}
 
-            return btoa(
-                String.fromCharCode(...new Uint8Array(buffer))
+
+// -----------------------------
+// RANDOM CODE VERIFIER
+// -----------------------------
+
+function generateRandomString(length) {
+
+    const characters =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+    let result = "";
+
+    for (let i = 0; i < length; i++) {
+
+        result += characters.charAt(
+            Math.floor(
+                Math.random() * characters.length
             )
-            .replace(/\+/g, "-")
-            .replace(/\//g, "_")
-            .replace(/=+$/, "");
+        );
+    }
+
+    return result;
+}
+
+
+// -----------------------------
+// CODE CHALLENGE
+// -----------------------------
+
+async function generateCodeChallenge(verifier) {
+
+    const data =
+        new TextEncoder().encode(verifier);
+
+    const digest =
+        await crypto.subtle.digest(
+            "SHA-256",
+            data
+        );
+
+    return base64urlencode(digest);
+}
+
+
+function base64urlencode(buffer) {
+
+    return btoa(
+        String.fromCharCode(
+            ...new Uint8Array(buffer)
+        )
+    )
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+
+// -----------------------------
+// GET ACCESS TOKEN
+// -----------------------------
+
+async function getToken(code) {
+
+    const codeVerifier =
+        localStorage.getItem("code_verifier");
+
+    const response = await fetch(
+        "https://accounts.spotify.com/api/token",
+        {
+            method: "POST",
+
+            headers: {
+                "Content-Type":
+                    "application/x-www-form-urlencoded"
+            },
+
+            body: new URLSearchParams({
+
+                client_id: CLIENT_ID,
+
+                grant_type:
+                    "authorization_code",
+
+                code: code,
+
+                redirect_uri:
+                    REDIRECT_URI,
+
+                code_verifier:
+                    codeVerifier
+            })
         }
-    </script>
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+
+        console.error(data);
+
+        document.getElementById("status").innerText =
+            "Token error: " + data.error;
+
+        return;
+    }
+
+    localStorage.setItem(
+        "access_token",
+        data.access_token
+    );
+
+    document.getElementById("status").innerText =
+        "Logged in!";
+
+    // Remove ?code=... from the browser URL
+    window.history.replaceState(
+        {},
+        document.title,
+        REDIRECT_URI
+    );
+
+    getCurrentlyPlaying();
+}
+
+
+// -----------------------------
+// GET CURRENT SONG
+// -----------------------------
+
+async function getCurrentlyPlaying() {
+
+    const token =
+        localStorage.getItem("access_token");
+
+    if (!token) {
+        return;
+    }
+
+    const response = await fetch(
+        "https://api.spotify.com/v1/me/player/currently-playing",
+        {
+            headers: {
+                Authorization:
+                    "Bearer " + token
+            }
+        }
+    );
+
+    if (response.status === 204) {
+
+        document.getElementById("song").innerText =
+            "Nothing is currently playing.";
+
+        return;
+    }
+
+    if (!response.ok) {
+
+        document.getElementById("song").innerText =
+            "Unable to get current song.";
+
+        console.error(
+            await response.text()
+        );
+
+        return;
+    }
+
+    const data = await response.json();
+
+    if (!data.item) {
+
+        document.getElementById("song").innerText =
+            "Nothing is currently playing.";
+
+        return;
+    }
+
+    const songName =
+        data.item.name;
+
+    const artistName =
+        data.item.artists
+            .map(artist => artist.name)
+            .join(", ");
+
+    document.getElementById("song").innerHTML =
+        "<strong>" +
+        songName +
+        "</strong><br>" +
+        artistName;
+}
+
+
+// -----------------------------
+// CHECK CALLBACK
+// -----------------------------
+
+window.onload = function() {
+
+    const params =
+        new URLSearchParams(
+            window.location.search
+        );
+
+    const code =
+        params.get("code");
+
+    const error =
+        params.get("error");
+
+    if (error) {
+
+        document.getElementById("status").innerText =
+            "Spotify login cancelled.";
+
+        return;
+    }
+
+    if (code) {
+
+        getToken(code);
+
+    } else {
+
+        const token =
+            localStorage.getItem("access_token");
+
+        if (token) {
+
+            document.getElementById("status").innerText =
+                "Logged in!";
+
+            getCurrentlyPlaying();
+        }
+    }
+};
+
+</script>
 
 </body>
 </html>
