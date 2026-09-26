@@ -265,6 +265,8 @@ async function getCurrentlyPlaying() {
         data.item.artists
             .map(artist => artist.name)
             .join(", ");
+    
+    const albumCover = data.item.album.images[0].url;
 
     document.getElementById("song").innerHTML =
         "<strong>" +
