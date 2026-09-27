@@ -1,118 +1,319 @@
 <!DOCTYPE html>
+
 <html>
+
 <head>
-    <meta charset="UTF-8">
-    <title>Spotify ESP32</title>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 60px;
-            background: #111;
-            color: white;
-        }
+<meta charset="UTF-8">
 
-        button {
-            padding: 12px 25px;
-            font-size: 18px;
-            cursor: pointer;
-        }
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
 
-        #song {
-            margin-top: 30px;
-            font-size: 24px;
-        }
-    </style>
-</head>
-
-<body>
-
-    <h1>ESP32 Spotify Display</h1>
-
-    <button id="loginButton" onclick="login()">
-        Login with Spotify
-    </button>
-
-    <div id="status">Not logged in</div>
-
-    <div id="song"></div>
-
-<script>
-
-const CLIENT_ID = "044f9bd3716a4e3b8413a708aa32ba49";
-
-const REDIRECT_URI = "https://231bhav.github.io/spot/";
-
-const SCOPES = "user-read-currently-playing";
+<title>ESP32 Spotify Display</title>
 
 
-// -----------------------------
-// LOGIN
-// -----------------------------
+<style>
 
-async function login() {
+body {
 
-    const codeVerifier = generateRandomString(64);
+    font-family: Arial, sans-serif;
 
-    localStorage.setItem("code_verifier", codeVerifier);
+    text-align: center;
 
-    const codeChallenge =
-        await generateCodeChallenge(codeVerifier);
+    margin-top: 50px;
 
-    const params = new URLSearchParams({
+    background: #111;
 
-        client_id: CLIENT_ID,
-
-        response_type: "code",
-
-        redirect_uri: REDIRECT_URI,
-
-        scope: SCOPES,
-
-        code_challenge_method: "S256",
-
-        code_challenge: codeChallenge
-    });
-
-    window.location =
-        "https://accounts.spotify.com/authorize?" +
-        params.toString();
+    color: white;
 }
 
 
-// -----------------------------
-// RANDOM CODE VERIFIER
-// -----------------------------
+h1 {
 
-function generateRandomString(length) {
+    margin-bottom: 30px;
+}
+
+
+button {
+
+    padding: 12px 25px;
+
+    margin: 5px;
+
+    font-size: 16px;
+
+    cursor: pointer;
+
+    border: none;
+
+    border-radius: 6px;
+}
+
+
+#loginButton {
+
+    background: #1DB954;
+
+    color: white;
+}
+
+
+#serialButton {
+
+    background: #444;
+
+    color: white;
+}
+
+
+#status {
+
+    margin-top: 25px;
+
+    font-size: 18px;
+}
+
+
+#song {
+
+    margin-top: 30px;
+
+    font-size: 24px;
+}
+
+
+#albumCover {
+
+    margin-top: 20px;
+
+    width: 250px;
+
+    height: 250px;
+
+    object-fit: contain;
+
+    display: none;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<h1>
+    ESP32 Spotify Display
+</h1>
+
+
+<!-- ============================================= -->
+<!-- SPOTIFY LOGIN -->
+<!-- ============================================= -->
+
+<button
+    id="loginButton"
+    onclick="login()">
+
+    Login with Spotify
+
+</button>
+
+
+<!-- ============================================= -->
+<!-- ESP32 CONNECTION -->
+<!-- ============================================= -->
+
+<button
+    id="serialButton"
+    onclick="connectESP32()">
+
+    Connect ESP32
+
+</button>
+
+
+<!-- ============================================= -->
+<!-- STATUS -->
+<!-- ============================================= -->
+
+<div id="status">
+
+    Not logged in
+
+</div>
+
+
+<!-- ============================================= -->
+<!-- ALBUM COVER -->
+<!-- ============================================= -->
+
+<img
+    id="albumCover"
+    alt="Album Cover"
+>
+
+
+<!-- ============================================= -->
+<!-- SONG -->
+<!-- ============================================= -->
+
+<div id="song">
+
+</div>
+
+
+<script>
+
+
+// =================================================
+// SPOTIFY SETTINGS
+// =================================================
+
+const CLIENT_ID =
+    "044f9bd3716a4e3b8413a708aa32ba49";
+
+
+const REDIRECT_URI =
+    "https://231bhav.github.io/spot/";
+
+
+const SCOPES =
+    "user-read-currently-playing";
+
+
+// =================================================
+// SERIAL VARIABLES
+// =================================================
+
+let serialPort = null;
+
+let serialWriter = null;
+
+
+// =================================================
+// PREVENT SENDING SAME SONG REPEATEDLY
+// =================================================
+
+let lastSongID = "";
+
+
+// =================================================
+// SPOTIFY LOGIN
+// =================================================
+
+async function login() {
+
+
+    // ---------------------------------------------
+    // Generate PKCE verifier
+    // ---------------------------------------------
+
+    const codeVerifier =
+        generateRandomString(64);
+
+
+    localStorage.setItem(
+        "code_verifier",
+        codeVerifier
+    );
+
+
+    // ---------------------------------------------
+    // Generate challenge
+    // ---------------------------------------------
+
+    const codeChallenge =
+        await generateCodeChallenge(
+            codeVerifier
+        );
+
+
+    // ---------------------------------------------
+    // Spotify authorization URL
+    // ---------------------------------------------
+
+    const params =
+        new URLSearchParams({
+
+            client_id:
+                CLIENT_ID,
+
+            response_type:
+                "code",
+
+            redirect_uri:
+                REDIRECT_URI,
+
+            scope:
+                SCOPES,
+
+            code_challenge_method:
+                "S256",
+
+            code_challenge:
+                codeChallenge
+
+        });
+
+
+    window.location =
+        "https://accounts.spotify.com/authorize?"
+        + params.toString();
+}
+
+
+// =================================================
+// RANDOM STRING
+// =================================================
+
+function generateRandomString(
+    length
+) {
 
     const characters =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+        "abcdefghijklmnopqrstuvwxyz" +
+        "0123456789";
+
 
     let result = "";
 
-    for (let i = 0; i < length; i++) {
 
-        result += characters.charAt(
-            Math.floor(
-                Math.random() * characters.length
-            )
-        );
+    for (
+        let i = 0;
+        i < length;
+        i++
+    ) {
+
+        result +=
+            characters.charAt(
+                Math.floor(
+                    Math.random() *
+                    characters.length
+                )
+            );
     }
+
 
     return result;
 }
 
 
-// -----------------------------
-// CODE CHALLENGE
-// -----------------------------
+// =================================================
+// SHA-256 CODE CHALLENGE
+// =================================================
 
-async function generateCodeChallenge(verifier) {
+async function generateCodeChallenge(
+    verifier
+) {
 
     const data =
-        new TextEncoder().encode(verifier);
+        new TextEncoder().encode(
+            verifier
+        );
+
 
     const digest =
         await crypto.subtle.digest(
@@ -120,207 +321,953 @@ async function generateCodeChallenge(verifier) {
             data
         );
 
-    return base64urlencode(digest);
+
+    return base64urlencode(
+        digest
+    );
 }
 
 
-function base64urlencode(buffer) {
+// =================================================
+// BASE64 URL ENCODE
+// =================================================
+
+function base64urlencode(
+    buffer
+) {
 
     return btoa(
         String.fromCharCode(
             ...new Uint8Array(buffer)
         )
     )
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+    .replace(
+        /\+/g,
+        "-"
+    )
+    .replace(
+        /\//g,
+        "_"
+    )
+    .replace(
+        /=+$/,
+        ""
+    );
 }
 
 
-// -----------------------------
-// GET ACCESS TOKEN
-// -----------------------------
+// =================================================
+// GET SPOTIFY TOKEN
+// =================================================
 
-async function getToken(code) {
+async function getToken(
+    code
+) {
 
     const codeVerifier =
-        localStorage.getItem("code_verifier");
+        localStorage.getItem(
+            "code_verifier"
+        );
 
-    const response = await fetch(
-        "https://accounts.spotify.com/api/token",
-        {
-            method: "POST",
 
-            headers: {
-                "Content-Type":
-                    "application/x-www-form-urlencoded"
-            },
+    const response =
+        await fetch(
+            "https://accounts.spotify.com/api/token",
+            {
 
-            body: new URLSearchParams({
+                method:
+                    "POST",
 
-                client_id: CLIENT_ID,
+                headers:
+                    {
+                        "Content-Type":
+                            "application/x-www-form-urlencoded"
+                    },
 
-                grant_type:
-                    "authorization_code",
+                body:
+                    new URLSearchParams({
 
-                code: code,
+                        client_id:
+                            CLIENT_ID,
 
-                redirect_uri:
-                    REDIRECT_URI,
+                        grant_type:
+                            "authorization_code",
 
-                code_verifier:
-                    codeVerifier
-            })
-        }
-    );
+                        code:
+                            code,
 
-    const data = await response.json();
+                        redirect_uri:
+                            REDIRECT_URI,
 
-    if (!response.ok) {
+                        code_verifier:
+                            codeVerifier
 
-        console.error(data);
+                    })
 
-        document.getElementById("status").innerText =
-            "Token error: " + data.error;
+            }
+        );
+
+
+    const data =
+        await response.json();
+
+
+    if (
+        !response.ok
+    ) {
+
+        console.error(
+            data
+        );
+
+
+        document.getElementById(
+            "status"
+        ).innerText =
+            "Token error: " +
+            data.error;
+
 
         return;
     }
+
+
+    // ---------------------------------------------
+    // Save token
+    // ---------------------------------------------
 
     localStorage.setItem(
         "access_token",
         data.access_token
     );
 
-    document.getElementById("status").innerText =
+
+    // Save expiry time
+    localStorage.setItem(
+        "token_expiry",
+        Date.now() +
+        (
+            data.expires_in *
+            1000
+        )
+    );
+
+
+    // Save refresh token if provided
+    if (
+        data.refresh_token
+    ) {
+
+        localStorage.setItem(
+            "refresh_token",
+            data.refresh_token
+        );
+    }
+
+
+    document.getElementById(
+        "status"
+    ).innerText =
         "Logged in!";
 
-    // Remove ?code=... from the browser URL
+
+    // Remove ?code=... from URL
+
     window.history.replaceState(
         {},
         document.title,
         REDIRECT_URI
     );
 
+
+    // Get song
+
     getCurrentlyPlaying();
 }
 
 
-// -----------------------------
-// GET CURRENT SONG
-// -----------------------------
+// =================================================
+// REFRESH SPOTIFY TOKEN
+// =================================================
 
-async function getCurrentlyPlaying() {
+async function refreshToken() {
 
-    const token =
-        localStorage.getItem("access_token");
 
-    if (!token) {
-        return;
-    }
-
-    const response = await fetch(
-        "https://api.spotify.com/v1/me/player/currently-playing",
-        {
-            headers: {
-                Authorization:
-                    "Bearer " + token
-            }
-        }
-    );
-
-    if (response.status === 204) {
-
-        document.getElementById("song").innerText =
-            "Nothing is currently playing.";
-
-        return;
-    }
-
-    if (!response.ok) {
-
-        document.getElementById("song").innerText =
-            "Unable to get current song.";
-
-        console.error(
-            await response.text()
+    const refresh_token =
+        localStorage.getItem(
+            "refresh_token"
         );
 
-        return;
+
+    if (
+        !refresh_token
+    ) {
+
+        return false;
     }
 
-    const data = await response.json();
 
-    if (!data.item) {
+    const response =
+        await fetch(
+            "https://accounts.spotify.com/api/token",
+            {
 
-        document.getElementById("song").innerText =
-            "Nothing is currently playing.";
+                method:
+                    "POST",
 
-        return;
+                headers:
+                    {
+                        "Content-Type":
+                            "application/x-www-form-urlencoded"
+                    },
+
+                body:
+                    new URLSearchParams({
+
+                        client_id:
+                            CLIENT_ID,
+
+                        grant_type:
+                            "refresh_token",
+
+                        refresh_token:
+                            refresh_token
+
+                    })
+
+            }
+        );
+
+
+    const data =
+        await response.json();
+
+
+    if (
+        !response.ok
+    ) {
+
+        console.error(
+            data
+        );
+
+        return false;
     }
 
-    const songName =
-        data.item.name;
 
-    const artistName =
-        data.item.artists
-            .map(artist => artist.name)
-            .join(", ");
-    
-    const albumCover = data.item.album.images[0].url;
+    localStorage.setItem(
+        "access_token",
+        data.access_token
+    );
 
-    document.getElementById("song").innerHTML =
-        "<strong>" +
-        songName +
-        "</strong><br>" +
-        artistName;
+
+    localStorage.setItem(
+        "token_expiry",
+        Date.now() +
+        (
+            data.expires_in *
+            1000
+        )
+    );
+
+
+    if (
+        data.refresh_token
+    ) {
+
+        localStorage.setItem(
+            "refresh_token",
+            data.refresh_token
+        );
+    }
+
+
+    return true;
 }
 
 
-// -----------------------------
-// CHECK CALLBACK
-// -----------------------------
+// =================================================
+// GET VALID TOKEN
+// =================================================
 
-window.onload = function() {
+async function getValidToken() {
 
-    const params =
-        new URLSearchParams(
-            window.location.search
+
+    const token =
+        localStorage.getItem(
+            "access_token"
         );
 
-    const code =
-        params.get("code");
 
-    const error =
-        params.get("error");
+    const expiry =
+        localStorage.getItem(
+            "token_expiry"
+        );
 
-    if (error) {
 
-        document.getElementById("status").innerText =
-            "Spotify login cancelled.";
+    if (
+        !token
+    ) {
+
+        return null;
+    }
+
+
+    // Refresh if token expires
+    // within next 60 seconds
+
+    if (
+        expiry &&
+        Date.now() >
+        (
+            Number(expiry) -
+            60000
+        )
+    ) {
+
+        const refreshed =
+            await refreshToken();
+
+
+        if (
+            !refreshed
+        ) {
+
+            return null;
+        }
+    }
+
+
+    return localStorage.getItem(
+        "access_token"
+    );
+}
+
+
+// =================================================
+// CONNECT ESP32
+// =================================================
+
+async function connectESP32() {
+
+
+    // ---------------------------------------------
+    // Browser support check
+    // ---------------------------------------------
+
+    if (
+        !("serial" in navigator)
+    ) {
+
+        alert(
+            "Web Serial is not supported.\n\n" +
+            "Please use Google Chrome or Microsoft Edge."
+        );
 
         return;
     }
 
-    if (code) {
 
-        getToken(code);
+    try {
 
-    } else {
+
+        // -----------------------------------------
+        // Ask user to choose ESP32 serial port
+        // -----------------------------------------
+
+        serialPort =
+            await navigator.serial.requestPort();
+
+
+        // -----------------------------------------
+        // Open serial connection
+        // -----------------------------------------
+
+        await serialPort.open({
+
+            baudRate:
+                115200
+
+        });
+
+
+        // -----------------------------------------
+        // Get writer
+        // -----------------------------------------
+
+        serialWriter =
+            serialPort.writable.getWriter();
+
+
+        // -----------------------------------------
+        // Update button
+        // -----------------------------------------
+
+        document.getElementById(
+            "serialButton"
+        ).innerText =
+            "ESP32 Connected";
+
+
+        document.getElementById(
+            "serialButton"
+        ).style.background =
+            "#1DB954";
+
+
+        console.log(
+            "ESP32 connected."
+        );
+
+
+        // -----------------------------------------
+        // Send test command
+        // -----------------------------------------
+
+        await sendToESP32(
+            "PING"
+        );
+
+
+    }
+    catch (error) {
+
+
+        console.error(
+            error
+        );
+
+
+        alert(
+            "Could not connect to ESP32.\n\n" +
+            "Make sure Arduino Serial Monitor is closed."
+        );
+    }
+}
+
+
+// =================================================
+// SEND DATA TO ESP32
+// =================================================
+
+async function sendToESP32(
+    command
+) {
+
+
+    if (
+        !serialWriter
+    ) {
+
+        console.log(
+            "ESP32 not connected."
+        );
+
+        return;
+    }
+
+
+    try {
+
+
+        const data =
+            new TextEncoder().encode(
+                command +
+                "\n"
+            );
+
+
+        await serialWriter.write(
+            data
+        );
+
+
+        console.log(
+            "Sent to ESP32:",
+            command
+        );
+
+
+    }
+    catch (error) {
+
+
+        console.error(
+            "Serial write error:",
+            error
+        );
+    }
+}
+
+
+// =================================================
+// SEND CURRENT SONG TO ESP32
+// =================================================
+
+async function sendSongToESP32(
+    songName,
+    artistName,
+    albumCover
+) {
+
+
+    if (
+        !serialWriter
+    ) {
+
+        return;
+    }
+
+
+    // ---------------------------------------------
+    // Song
+    // ---------------------------------------------
+
+    await sendToESP32(
+        "SONG:" +
+        songName
+    );
+
+
+    // ---------------------------------------------
+    // Artist
+    // ---------------------------------------------
+
+    await sendToESP32(
+        "ARTIST:" +
+        artistName
+    );
+
+
+    // ---------------------------------------------
+    // Album cover
+    // ---------------------------------------------
+
+    await sendToESP32(
+        "IMAGE:" +
+        albumCover
+    );
+}
+
+
+// =================================================
+// GET CURRENTLY PLAYING
+// =================================================
+
+async function getCurrentlyPlaying() {
+
+
+    const token =
+        await getValidToken();
+
+
+    if (
+        !token
+    ) {
+
+        document.getElementById(
+            "status"
+        ).innerText =
+            "Not logged in";
+
+
+        return;
+    }
+
+
+    try {
+
+
+        const response =
+            await fetch(
+                "https://api.spotify.com/v1/me/player/currently-playing",
+                {
+
+                    headers:
+                        {
+                            Authorization:
+                                "Bearer " +
+                                token
+                        }
+
+                }
+            );
+
+
+        // -----------------------------------------
+        // Nothing playing
+        // -----------------------------------------
+
+        if (
+            response.status === 204
+        ) {
+
+            document.getElementById(
+                "song"
+            ).innerText =
+                "Nothing is currently playing.";
+
+
+            document.getElementById(
+                "albumCover"
+            ).style.display =
+                "none";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // Unauthorized
+        // -----------------------------------------
+
+        if (
+            response.status === 401
+        ) {
+
+            const refreshed =
+                await refreshToken();
+
+
+            if (
+                refreshed
+            ) {
+
+                return getCurrentlyPlaying();
+
+            }
+
+
+            document.getElementById(
+                "status"
+            ).innerText =
+                "Spotify login expired.";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // Other errors
+        // -----------------------------------------
+
+        if (
+            !response.ok
+        ) {
+
+            console.error(
+                await response.text()
+            );
+
+
+            document.getElementById(
+                "song"
+            ).innerText =
+                "Unable to get current song.";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // JSON response
+        // -----------------------------------------
+
+        const data =
+            await response.json();
+
+
+        if (
+            !data.item
+        ) {
+
+            document.getElementById(
+                "song"
+            ).innerText =
+                "Nothing is currently playing.";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // Track information
+        // -----------------------------------------
+
+        const songName =
+            data.item.name;
+
+
+        const artistName =
+            data.item.artists
+                .map(
+                    artist =>
+                        artist.name
+                )
+                .join(", ");
+
+
+        // -----------------------------------------
+        // Album images
+        // -----------------------------------------
+
+        const images =
+            data.item.album.images;
+
+
+        if (
+            !images ||
+            images.length === 0
+        ) {
+
+            return;
+        }
+
+
+        /*
+           Spotify supplies album images
+           in different sizes.
+
+           They are listed widest first.
+
+           Usually images[1] is around
+           300x300, which is good for
+           our ESP32 display.
+        */
+
+        let albumCover;
+
+
+        if (
+            images.length > 1
+        ) {
+
+            albumCover =
+                images[1].url;
+
+        } else {
+
+            albumCover =
+                images[0].url;
+        }
+
+
+        // -----------------------------------------
+        // Display on webpage
+        // -----------------------------------------
+
+        document.getElementById(
+            "song"
+        ).innerHTML =
+            "<strong>" +
+            escapeHTML(songName) +
+            "</strong><br>" +
+            escapeHTML(artistName);
+
+
+        const coverElement =
+            document.getElementById(
+                "albumCover"
+            );
+
+
+        coverElement.src =
+            albumCover;
+
+
+        coverElement.style.display =
+            "inline-block";
+
+
+        document.getElementById(
+            "status"
+        ).innerText =
+            "Playing";
+
+
+        // -----------------------------------------
+        // Detect song change
+        // -----------------------------------------
+
+        const trackID =
+            data.item.id;
+
+
+        if (
+            trackID !== lastSongID
+        ) {
+
+
+            lastSongID =
+                trackID;
+
+
+            console.log(
+                "New song:"
+            );
+
+            console.log(
+                songName
+            );
+
+
+            // -------------------------------------
+            // Send to ESP32
+            // -------------------------------------
+
+            await sendSongToESP32(
+
+                songName,
+
+                artistName,
+
+                albumCover
+
+            );
+        }
+
+
+    }
+    catch (error) {
+
+
+        console.error(
+            "Spotify error:",
+            error
+        );
+    }
+}
+
+
+// =================================================
+// ESCAPE HTML
+// =================================================
+
+function escapeHTML(
+    text
+) {
+
+    const div =
+        document.createElement(
+            "div"
+        );
+
+
+    div.textContent =
+        text;
+
+
+    return div.innerHTML;
+}
+
+
+// =================================================
+// PAGE LOAD
+// =================================================
+
+window.onload =
+    function() {
+
+
+        const params =
+            new URLSearchParams(
+                window.location.search
+            );
+
+
+        const code =
+            params.get(
+                "code"
+            );
+
+
+        const error =
+            params.get(
+                "error"
+            );
+
+
+        // -----------------------------------------
+        // Login cancelled
+        // -----------------------------------------
+
+        if (
+            error
+        ) {
+
+            document.getElementById(
+                "status"
+            ).innerText =
+                "Spotify login cancelled.";
+
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // Returning from Spotify
+        // -----------------------------------------
+
+        if (
+            code
+        ) {
+
+            getToken(
+                code
+            );
+
+
+            return;
+        }
+
+
+        // -----------------------------------------
+        // Existing login
+        // -----------------------------------------
 
         const token =
-            localStorage.getItem("access_token");
+            localStorage.getItem(
+                "access_token"
+            );
 
-        if (token) {
 
-            document.getElementById("status").innerText =
+        if (
+            token
+        ) {
+
+            document.getElementById(
+                "status"
+            ).innerText =
                 "Logged in!";
+
 
             getCurrentlyPlaying();
         }
-    }
-};
+    };
+
+
+// =================================================
+// UPDATE EVERY 5 SECONDS
+// =================================================
+
+setInterval(
+    function() {
+
+        getCurrentlyPlaying();
+
+    },
+    5000
+);
+
 
 </script>
 
+
 </body>
+
 </html>
